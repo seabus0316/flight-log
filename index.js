@@ -12,7 +12,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-// 用於暫存所有紀錄（正式建議改DB）
+// In-memory flight logs (for production, use a DB)
 const flightLogs = [];
 
 const commands = [
@@ -27,7 +27,7 @@ const commands = [
       { name: "passengers", type: 3, description: "Number of passengers", required: true },
       { name: "pilot", type: 6, description: "Pilot (Discord user)", required: true },
       { name: "time", type: 3, description: "Flight time", required: false },
-      { name: "image", type: 3, description: "URL of an image (optional)", required: false },
+      { name: "image", type: 3, description: "Image URL (optional)", required: false },
     ],
   },
   {
@@ -48,13 +48,13 @@ const commands = [
 ];
 
 client.once("ready", async () => {
-  console.log(`✅ 已登入：${client.user.tag}`);
+  console.log(`✅ Logged in as: ${client.user.tag}`);
   try {
     const guild = await client.guilds.fetch(guildId);
     await guild.commands.set(commands);
-    console.log("✅ 指令註冊成功！");
+    console.log("✅ Commands registered successfully!");
   } catch (err) {
-    console.error("❌ 指令註冊失敗：", err);
+    console.error("❌ Failed to register commands:", err);
   }
 });
 
@@ -71,7 +71,7 @@ client.on("interactionCreate", async (interaction) => {
     const image = interaction.options.getString("image");
     const pilot = interaction.options.getUser("pilot") || interaction.user;
 
-    // 儲存 flight log
+    // Save flight log
     flightLogs.push({
       pilotId: pilot.id,
       pilotTag: pilot.tag,
@@ -88,7 +88,7 @@ client.on("interactionCreate", async (interaction) => {
     const embed = new EmbedBuilder()
       .setColor(0x00a64f)
       .setTitle(callsign)
-      .setDescription("Flight details are as follows:")
+      .setDescription("Flight details:")
       .addFields(
         { name: "Pilot", value: `<@${pilot.id}>`, inline: true },
         { name: "Departure", value: departure, inline: true },
@@ -109,13 +109,13 @@ client.on("interactionCreate", async (interaction) => {
     const logs = flightLogs.filter(log => log.pilotId === pilot.id);
 
     if (logs.length === 0) {
-      await interaction.reply(`找不到 <@${pilot.id}> 的飛行紀錄。`);
+      await interaction.reply(`No flight records found for <@${pilot.id}>.`);
       return;
     }
 
-    let msg = `**<@${pilot.id}> 的飛行紀錄：**\n`;
+    let msg = `**Flight records for <@${pilot.id}>:**\n`;
     logs.forEach((log, idx) => {
-      msg += `\n${idx + 1}. ${log.callsign} | ${log.departure} → ${log.arrival} | ${log.plane} | ${log.passengers}人 | ${log.time}`;
+      msg += `\n${idx + 1}. ${log.callsign} | ${log.departure} → ${log.arrival} | ${log.plane} | ${log.passengers} pax | ${log.time}`;
     });
 
     await interaction.reply(msg);
@@ -128,15 +128,15 @@ client.on("interactionCreate", async (interaction) => {
     const logs = flightLogs.filter(log => log.pilotId === pilot.id);
 
     if (logs.length === 0) {
-      await interaction.reply(`找不到 <@${pilot.id}> 的飛行紀錄。`);
+      await interaction.reply(`No flight records found for <@${pilot.id}>.`);
       return;
     }
     if (index < 0 || index >= logs.length) {
-      await interaction.reply(`索引錯誤，請使用 /view 查詢正確編號。`);
+      await interaction.reply(`Invalid index. Use /view to check the correct number.`);
       return;
     }
 
-    // 從 flightLogs 移除
+    // Remove from flightLogs
     const logToRemove = logs[index];
     const removeIndex = flightLogs.findIndex(
       log =>
@@ -145,7 +145,7 @@ client.on("interactionCreate", async (interaction) => {
     );
     flightLogs.splice(removeIndex, 1);
 
-    await interaction.reply(`已移除 <@${pilot.id}> 的第 ${index + 1} 筆飛行紀錄：${logToRemove.callsign} | ${logToRemove.departure} → ${logToRemove.arrival}`);
+    await interaction.reply(`Removed flight record #${index + 1} for <@${pilot.id}>: ${logToRemove.callsign} | ${logToRemove.departure} → ${logToRemove.arrival}`);
   }
 });
 
@@ -159,5 +159,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🌐 保持活躍的 Web 伺服器正在 http://localhost:${PORT} 運行`);
+  console.log(`🌐 Web server is running at http://localhost:${PORT}`);
 });
