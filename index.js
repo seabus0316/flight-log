@@ -12,7 +12,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-// 用來暫存所有 flight log
+// 紀錄所有航班
 const flightLogs = [];
 
 const commands = [
@@ -35,6 +35,14 @@ const commands = [
     description: "View logged flights of a pilot",
     options: [
       { name: "pilot", type: 6, description: "Pilot (Discord user)", required: true },
+    ],
+  },
+  {
+    name: "remove",
+    description: "Remove a logged flight for a pilot (by index)",
+    options: [
+      { name: "pilot", type: 6, description: "Pilot (Discord user)", required: true },
+      { name: "index", type: 4, description: "Flight log index (from /view)", required: true },
     ],
   },
 ];
@@ -111,6 +119,33 @@ client.on("interactionCreate", async (interaction) => {
     });
 
     await interaction.reply(msg);
+  }
+
+  if (interaction.commandName === "remove") {
+    const pilot = interaction.options.getUser("pilot");
+    const index = interaction.options.getInteger("index") - 1;
+
+    const logs = flightLogs.filter(log => log.pilotId === pilot.id);
+
+    if (logs.length === 0) {
+      await interaction.reply(`找不到 <@${pilot.id}> 的飛行紀錄。`);
+      return;
+    }
+    if (index < 0 || index >= logs.length) {
+      await interaction.reply(`索引錯誤，請使用 /view 查詢正確編號。`);
+      return;
+    }
+
+    // 從 flightLogs 移除
+    const logToRemove = logs[index];
+    const removeIndex = flightLogs.findIndex(
+      log =>
+        log.pilotId === logToRemove.pilotId &&
+        log.timestamp === logToRemove.timestamp
+    );
+    flightLogs.splice(removeIndex, 1);
+
+    await interaction.reply(`已移除 <@${pilot.id}> 的第 ${index + 1} 筆飛行紀錄：${logToRemove.callsign} | ${logToRemove.departure} → ${logToRemove.arrival}`);
   }
 });
 
