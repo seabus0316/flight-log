@@ -12,7 +12,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-// 紀錄所有航班
+// 用於暫存所有紀錄（正式建議改DB）
 const flightLogs = [];
 
 const commands = [
@@ -25,9 +25,9 @@ const commands = [
       { name: "plane", type: 3, description: "Type of plane", required: true },
       { name: "callsign", type: 3, description: "Pilot callsign", required: true },
       { name: "passengers", type: 3, description: "Number of passengers", required: true },
+      { name: "pilot", type: 6, description: "Pilot (Discord user)", required: true },
       { name: "time", type: 3, description: "Flight time", required: false },
       { name: "image", type: 3, description: "URL of an image (optional)", required: false },
-      { name: "pilot", type: 6, description: "Pilot (Discord user)", required: true },
     ],
   },
   {
