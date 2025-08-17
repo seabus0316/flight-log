@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, EmbedBuilder } from "discord.js";
 import { config } from "dotenv";
 import express from "express";
+import fs from "fs";
 
 config();
 
@@ -8,12 +9,30 @@ const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID;
 
+const LOG_PATH = "./flightlogs.json";
+
+// Load flight logs from file (persistent storage)
+function loadLogs() {
+  if (fs.existsSync(LOG_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(LOG_PATH, "utf8"));
+    } catch (e) {
+      console.error("Failed to parse flightlogs.json, starting with empty log.");
+      return [];
+    }
+  }
+  return [];
+}
+let flightLogs = loadLogs();
+
+// Save flight logs to file
+function saveLogs() {
+  fs.writeFileSync(LOG_PATH, JSON.stringify(flightLogs, null, 2), "utf8");
+}
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
-
-// In-memory flight logs (for production, use a DB)
-const flightLogs = [];
 
 const commands = [
   {
@@ -71,8 +90,8 @@ client.on("interactionCreate", async (interaction) => {
     const image = interaction.options.getString("image");
     const pilot = interaction.options.getUser("pilot") || interaction.user;
 
-    // Save flight log
-    flightLogs.push({
+    // Save flight log (with persist)
+    const newLog = {
       pilotId: pilot.id,
       pilotTag: pilot.tag,
       departure,
@@ -83,7 +102,9 @@ client.on("interactionCreate", async (interaction) => {
       time,
       image,
       timestamp: Date.now(),
-    });
+    };
+    flightLogs.push(newLog);
+    saveLogs();
 
     const embed = new EmbedBuilder()
       .setColor(0x00a64f)
@@ -136,7 +157,7 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    // Remove from flightLogs
+    // Remove from flightLogs (with persist)
     const logToRemove = logs[index];
     const removeIndex = flightLogs.findIndex(
       log =>
@@ -144,6 +165,7 @@ client.on("interactionCreate", async (interaction) => {
         log.timestamp === logToRemove.timestamp
     );
     flightLogs.splice(removeIndex, 1);
+    saveLogs();
 
     await interaction.reply(`Removed flight record #${index + 1} for <@${pilot.id}>: ${logToRemove.callsign} | ${logToRemove.departure} → ${logToRemove.arrival}`);
   }
