@@ -6,12 +6,11 @@ import fs from "fs";
 config();
 
 const token = process.env.TOKEN;
-const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID;
 
 const LOG_PATH = "./flightlogs.json";
 
-// Load flight logs from file (persistent storage)
+// 載入紀錄
 function loadLogs() {
   if (fs.existsSync(LOG_PATH)) {
     try {
@@ -25,7 +24,7 @@ function loadLogs() {
 }
 let flightLogs = loadLogs();
 
-// Save flight logs to file
+// 儲存紀錄
 function saveLogs() {
   fs.writeFileSync(LOG_PATH, JSON.stringify(flightLogs, null, 2), "utf8");
 }
@@ -130,7 +129,7 @@ client.on("interactionCreate", async (interaction) => {
     const logs = flightLogs.filter(log => log.pilotId === pilot.id);
 
     if (logs.length === 0) {
-      await interaction.reply(`No flight records found for <@${pilot.id}>.`);
+      await interaction.reply({ content: `No flight records found for <@${pilot.id}>.`, ephemeral: true });
       return;
     }
 
@@ -139,7 +138,8 @@ client.on("interactionCreate", async (interaction) => {
       msg += `\n${idx + 1}. ${log.callsign} | ${log.departure} → ${log.arrival} | ${log.plane} | ${log.passengers} pax | ${log.time}`;
     });
 
-    await interaction.reply(msg);
+    // 用 ephemeral:true 只讓發指令的人看到
+    await interaction.reply({ content: msg, ephemeral: true });
   }
 
   if (interaction.commandName === "remove") {
@@ -149,11 +149,11 @@ client.on("interactionCreate", async (interaction) => {
     const logs = flightLogs.filter(log => log.pilotId === pilot.id);
 
     if (logs.length === 0) {
-      await interaction.reply(`No flight records found for <@${pilot.id}>.`);
+      await interaction.reply({ content: `No flight records found for <@${pilot.id}>.`, ephemeral: true });
       return;
     }
     if (index < 0 || index >= logs.length) {
-      await interaction.reply(`Invalid index. Use /view to check the correct number.`);
+      await interaction.reply({ content: `Invalid index. Use /view to check the correct number.`, ephemeral: true });
       return;
     }
 
@@ -167,7 +167,7 @@ client.on("interactionCreate", async (interaction) => {
     flightLogs.splice(removeIndex, 1);
     saveLogs();
 
-    await interaction.reply(`Removed flight record #${index + 1} for <@${pilot.id}>: ${logToRemove.callsign} | ${logToRemove.departure} → ${logToRemove.arrival}`);
+    await interaction.reply({ content: `Removed flight record #${index + 1} for <@${pilot.id}>: ${logToRemove.callsign} | ${logToRemove.departure} → ${logToRemove.arrival}`, ephemeral: true });
   }
 });
 
