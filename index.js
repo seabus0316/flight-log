@@ -1,32 +1,39 @@
 import { Client, GatewayIntentBits, EmbedBuilder } from "discord.js";
 import { config } from "dotenv";
 import express from "express";
-import fs from "fs";
+import mongoose from "mongoose";
 
 config();
 
-const token = process.env.TOKEN;
+const token = process.env.TOKEN || process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID;
+const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/flightlogs";
 
-const LOG_PATH = "./flightlogs.json";
+// MongoDB Schema
+const flightLogSchema = new mongoose.Schema({
+  pilotId: { type: String, required: true },
+  pilotTag: { type: String, required: true },
+  departure: { type: String, required: true },
+  arrival: { type: String, required: true },
+  plane: { type: String, required: true },
+  callsign: { type: String, required: true },
+  passengers: { type: String, required: true },
+  time: { type: String, default: "N/A" },
+  image: { type: String, default: null },
+  timestamp: { type: Date, default: Date.now }
+});
 
-// 載入紀錄
-function loadLogs() {
-  if (fs.existsSync(LOG_PATH)) {
-    try {
-      return JSON.parse(fs.readFileSync(LOG_PATH, "utf8"));
-    } catch (e) {
-      console.error("Failed to parse flightlogs.json, starting with empty log.");
-      return [];
-    }
+const FlightLog = mongoose.model("FlightLog", flightLogSchema);
+
+// 連接到 MongoDB
+async function connectToMongoDB() {
+  try {
+    await mongoose.connect(mongoUri);
+    console.log("✅ Connected to MongoDB successfully!");
+  } catch (error) {
+    console.error("❌ Failed to connect to MongoDB:", error);
+    process.exit(1);
   }
-  return [];
-}
-let flightLogs = loadLogs();
-
-// 儲存紀錄
-function saveLogs() {
-  fs.writeFileSync(LOG_PATH, JSON.stringify(flightLogs, null, 2), "utf8");
 }
 
 const client = new Client({
@@ -63,10 +70,21 @@ const commands = [
       { name: "index", type: 4, description: "Flight log index (from /view)", required: true },
     ],
   },
+  {
+    name: "stats",
+    description: "View flight statistics for a pilot",
+    options: [
+      { name: "pilot", type: 6, description: "Pilot (Discord user)", required: true },
+    ],
+  },
 ];
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as: ${client.user.tag}`);
+  
+  // 連接到 MongoDB
+  await connectToMongoDB();
+  
   try {
     const guild = await client.guilds.fetch(guildId);
     await guild.commands.set(commands);
@@ -79,96 +97,170 @@ client.once("ready", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isCommand()) return;
 
-  if (interaction.commandName === "flight-log") {
-    const departure = interaction.options.getString("departure");
-    const arrival = interaction.options.getString("arrival");
-    const plane = interaction.options.getString("plane");
-    const callsign = `EVA ${interaction.options.getString("callsign")}`;
-    const passengers = interaction.options.getString("passengers");
-    const time = interaction.options.getString("time") || "N/A";
-    const image = interaction.options.getString("image");
-    const pilot = interaction.options.getUser("pilot") || interaction.user;
+  try {
+    if (interaction.commandName === "flight-log") {
+      const departure = interaction.options.getString("departure");
+      const arrival = interaction.options.getString("arrival");
+      const plane = interaction.options.getString("plane");
+      const callsign = `EVA ${interaction.options.getString("callsign")}`;
+      const passengers = interaction.options.getString("passengers");
+      const time = interaction.options.getString("time") || "N/A";
+      const image = interaction.options.getString("image");
+      const pilot = interaction.options.getUser("pilot") || interaction.user;
 
-    // Save flight log (with persist)
-    const newLog = {
-      pilotId: pilot.id,
-      pilotTag: pilot.tag,
-      departure,
-      arrival,
-      plane,
-      callsign,
-      passengers,
-      time,
-      image,
-      timestamp: Date.now(),
-    };
-    flightLogs.push(newLog);
-    saveLogs();
+      // 保存到 MongoDB
+      const newLog = new FlightLog({
+        pilotId: pilot.id,
+        pilotTag: pilot.tag,
+        departure,
+        arrival,
+        plane,
+        callsign,
+        passengers,
+        time,
+        image,
+      });
 
-    const embed = new EmbedBuilder()
-      .setColor(0x00a64f)
-      .setTitle(callsign)
-      .setDescription("Flight details:")
-      .addFields(
-        { name: "Pilot", value: `<@${pilot.id}>`, inline: true },
-        { name: "Departure", value: departure, inline: true },
-        { name: "Arrival", value: arrival, inline: true },
-        { name: "Plane", value: plane, inline: true },
-        { name: "Passengers", value: passengers, inline: true },
-        { name: "Time", value: time, inline: true },
-      )
-      .setFooter({ text: "Thank you for using Flight Log Bot!" });
+      await newLog.save();
 
-    if (image) embed.setImage(image);
+      const embed = new EmbedBuilder()
+        .setColor(0x00a64f)
+        .setTitle(callsign)
+        .setDescription("Flight details:")
+        .addFields(
+          { name: "Pilot", value: `<@${pilot.id}>`, inline: true },
+          { name: "Departure", value: departure, inline: true },
+          { name: "Arrival", value: arrival, inline: true },
+          { name: "Plane", value: plane, inline: true },
+          { name: "Passengers", value: passengers, inline: true },
+          { name: "Time", value: time, inline: true },
+        )
+        .setFooter({ text: "Flight logged successfully!" });
 
-    await interaction.reply({ embeds: [embed] });
-  }
+      if (image) embed.setImage(image);
 
-  if (interaction.commandName === "view") {
-    const pilot = interaction.options.getUser("pilot");
-    const logs = flightLogs.filter(log => log.pilotId === pilot.id);
-
-    if (logs.length === 0) {
-      await interaction.reply({ content: `No flight records found for <@${pilot.id}>.`, ephemeral: true });
-      return;
+      await interaction.reply({ embeds: [embed] });
     }
 
-    let msg = `**Flight records for <@${pilot.id}>:**\n`;
-    logs.forEach((log, idx) => {
-      msg += `\n${idx + 1}. ${log.callsign} | ${log.departure} → ${log.arrival} | ${log.plane} | ${log.passengers} pax | ${log.time}`;
-    });
+    if (interaction.commandName === "view") {
+      const pilot = interaction.options.getUser("pilot");
+      const logs = await FlightLog.find({ pilotId: pilot.id }).sort({ timestamp: -1 });
 
-    // 用 ephemeral:true 只讓發指令的人看到
-    await interaction.reply({ content: msg, ephemeral: true });
-  }
+      if (logs.length === 0) {
+        await interaction.reply({ content: `No flight records found for <@${pilot.id}>.`, ephemeral: true });
+        return;
+      }
 
-  if (interaction.commandName === "remove") {
-    const pilot = interaction.options.getUser("pilot");
-    const index = interaction.options.getInteger("index") - 1;
+      let msg = `**Flight records for <@${pilot.id}> (${logs.length} total flights):**\n`;
+      logs.forEach((log, idx) => {
+        const date = new Date(log.timestamp).toLocaleDateString();
+        msg += `\n${idx + 1}. ${log.callsign} | ${log.departure} → ${log.arrival} | ${log.plane} | ${log.passengers} pax | ${log.time} | ${date}`;
+      });
 
-    const logs = flightLogs.filter(log => log.pilotId === pilot.id);
-
-    if (logs.length === 0) {
-      await interaction.reply({ content: `No flight records found for <@${pilot.id}>.`, ephemeral: true });
-      return;
+      // 如果訊息太長，分割成多個訊息
+      if (msg.length > 2000) {
+        const chunks = [];
+        const lines = msg.split('\n');
+        let currentChunk = lines[0] + '\n';
+        
+        for (let i = 1; i < lines.length; i++) {
+          if (currentChunk.length + lines[i].length > 1900) {
+            chunks.push(currentChunk);
+            currentChunk = lines[i] + '\n';
+          } else {
+            currentChunk += lines[i] + '\n';
+          }
+        }
+        chunks.push(currentChunk);
+        
+        await interaction.reply({ content: chunks[0], ephemeral: true });
+        for (let i = 1; i < chunks.length; i++) {
+          await interaction.followUp({ content: chunks[i], ephemeral: true });
+        }
+      } else {
+        await interaction.reply({ content: msg, ephemeral: true });
+      }
     }
-    if (index < 0 || index >= logs.length) {
-      await interaction.reply({ content: `Invalid index. Use /view to check the correct number.`, ephemeral: true });
-      return;
+
+    if (interaction.commandName === "remove") {
+      const pilot = interaction.options.getUser("pilot");
+      const index = interaction.options.getInteger("index") - 1;
+
+      const logs = await FlightLog.find({ pilotId: pilot.id }).sort({ timestamp: -1 });
+
+      if (logs.length === 0) {
+        await interaction.reply({ content: `No flight records found for <@${pilot.id}>.`, ephemeral: true });
+        return;
+      }
+      if (index < 0 || index >= logs.length) {
+        await interaction.reply({ content: `Invalid index. Use /view to check the correct number.`, ephemeral: true });
+        return;
+      }
+
+      const logToRemove = logs[index];
+      await FlightLog.findByIdAndDelete(logToRemove._id);
+
+      await interaction.reply({ 
+        content: `Removed flight record #${index + 1} for <@${pilot.id}>: ${logToRemove.callsign} | ${logToRemove.departure} → ${logToRemove.arrival}`, 
+        ephemeral: true 
+      });
     }
 
-    // Remove from flightLogs (with persist)
-    const logToRemove = logs[index];
-    const removeIndex = flightLogs.findIndex(
-      log =>
-        log.pilotId === logToRemove.pilotId &&
-        log.timestamp === logToRemove.timestamp
-    );
-    flightLogs.splice(removeIndex, 1);
-    saveLogs();
+    if (interaction.commandName === "stats") {
+      const pilot = interaction.options.getUser("pilot");
+      const logs = await FlightLog.find({ pilotId: pilot.id });
 
-    await interaction.reply({ content: `Removed flight record #${index + 1} for <@${pilot.id}>: ${logToRemove.callsign} | ${logToRemove.departure} → ${logToRemove.arrival}`, ephemeral: true });
+      if (logs.length === 0) {
+        await interaction.reply({ content: `No flight records found for <@${pilot.id}>.`, ephemeral: true });
+        return;
+      }
+
+      const totalFlights = logs.length;
+      const uniqueAirports = new Set();
+      const planeTypes = {};
+      let totalPassengers = 0;
+
+      logs.forEach(log => {
+        uniqueAirports.add(log.departure);
+        uniqueAirports.add(log.arrival);
+        planeTypes[log.plane] = (planeTypes[log.plane] || 0) + 1;
+        totalPassengers += parseInt(log.passengers) || 0;
+      });
+
+      const mostUsedPlane = Object.entries(planeTypes)
+        .sort(([,a], [,b]) => b - a)[0];
+
+      const embed = new EmbedBuilder()
+        .setColor(0x0099ff)
+        .setTitle(`Flight Statistics for ${pilot.tag}`)
+        .addFields(
+          { name: "Total Flights", value: totalFlights.toString(), inline: true },
+          { name: "Unique Airports", value: uniqueAirports.size.toString(), inline: true },
+          { name: "Total Passengers", value: totalPassengers.toString(), inline: true },
+          { name: "Most Used Aircraft", value: mostUsedPlane ? `${mostUsedPlane[0]} (${mostUsedPlane[1]} flights)` : "N/A", inline: true }
+        )
+        .setFooter({ text: "Flight statistics" });
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+  } catch (error) {
+    console.error("Error handling command:", error);
+    const errorMsg = "An error occurred while processing your command. Please try again.";
+    
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: errorMsg, ephemeral: true });
+    } else {
+      await interaction.reply({ content: errorMsg, ephemeral: true });
+    }
   }
+});
+
+// 優雅關閉
+process.on('SIGINT', async () => {
+  console.log('Shutting down gracefully...');
+  await mongoose.connection.close();
+  process.exit(0);
 });
 
 client.login(token);
@@ -176,8 +268,29 @@ client.login(token);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Render 健康檢查 - 防止服務休眠
+if (process.env.NODE_ENV === 'production') {
+  setInterval(() => {
+    fetch(`http://localhost:${PORT}/health`)
+      .catch(err => console.log('Health check failed:', err.message));
+  }, 14 * 60 * 1000); // 每 14 分鐘檢查一次
+}
+
 app.get("/", (req, res) => {
-  res.send("Bot is running!");
+  res.send("Flight Log Bot is running with MongoDB!");
+});
+
+app.get("/health", async (req, res) => {
+  try {
+    const dbStatus = mongoose.connection.readyState === 1 ? "Connected" : "Disconnected";
+    res.json({
+      status: "OK",
+      database: dbStatus,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ status: "Error", error: error.message });
+  }
 });
 
 app.listen(PORT, () => {
