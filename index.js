@@ -51,7 +51,7 @@ const commands = [
       { name: "callsign", type: 3, description: "Pilot callsign", required: true },
       { name: "passengers", type: 3, description: "Number of passengers", required: true },
       { name: "pilot", type: 6, description: "Pilot (Discord user)", required: true },
-      { name: "time", type: 3, description: "Flight time", required: true},
+      { name: "time", type: 3, description: "Flight time", required: false},
       { name: "image", type: 3, description: "Image URL (optional)", required: false },
     ],
   },
