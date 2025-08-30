@@ -25,7 +25,6 @@ const flightLogSchema = new mongoose.Schema({
 
 const FlightLog = mongoose.model("FlightLog", flightLogSchema);
 
-// 連接到 MongoDB
 async function connectToMongoDB() {
   try {
     await mongoose.connect(mongoUri);
@@ -51,8 +50,8 @@ const commands = [
       { name: "callsign", type: 3, description: "Pilot callsign", required: true },
       { name: "passengers", type: 3, description: "Number of passengers", required: true },
       { name: "pilot", type: 6, description: "Pilot (Discord user)", required: true },
-      { name: "time", type: 3, description: "Flight time", required: false},
-      { name: "image", type: 3, description: "Image URL (optional)", required: false },
+      { name: "time", type: 3, description: "Flight time", required: false },
+      { name: "image", type: 11, description: "Upload an image (optional)", required: false },
     ],
   },
   {
@@ -81,10 +80,7 @@ const commands = [
 
 client.once("ready", async () => {
   console.log(`✅ Logged in as: ${client.user.tag}`);
-  
-  // 連接到 MongoDB
   await connectToMongoDB();
-  
   try {
     const guild = await client.guilds.fetch(guildId);
     await guild.commands.set(commands);
@@ -105,10 +101,10 @@ client.on("interactionCreate", async (interaction) => {
       const callsign = `EVA ${interaction.options.getString("callsign")}`;
       const passengers = interaction.options.getString("passengers");
       const time = interaction.options.getString("time") || "N/A";
-      const image = interaction.options.getString("image");
+      const imageAttachment = interaction.options.getAttachment("image");
+      const image = imageAttachment ? imageAttachment.url : null;
       const pilot = interaction.options.getUser("pilot") || interaction.user;
 
-      // 保存到 MongoDB
       const newLog = new FlightLog({
         pilotId: pilot.id,
         pilotTag: pilot.tag,
@@ -138,7 +134,6 @@ client.on("interactionCreate", async (interaction) => {
         .setFooter({ text: "Flight logged successfully!" });
 
       if (image) embed.setImage(image);
-
       await interaction.reply({ embeds: [embed] });
     }
 
@@ -157,12 +152,10 @@ client.on("interactionCreate", async (interaction) => {
         msg += `\n${idx + 1}. ${log.callsign} | ${log.departure} → ${log.arrival} | ${log.plane} | ${log.passengers} pax | ${log.time} | ${date}`;
       });
 
-      // 如果訊息太長，分割成多個訊息
       if (msg.length > 2000) {
         const chunks = [];
         const lines = msg.split('\n');
         let currentChunk = lines[0] + '\n';
-        
         for (let i = 1; i < lines.length; i++) {
           if (currentChunk.length + lines[i].length > 1900) {
             chunks.push(currentChunk);
@@ -172,7 +165,6 @@ client.on("interactionCreate", async (interaction) => {
           }
         }
         chunks.push(currentChunk);
-        
         await interaction.reply({ content: chunks[0], ephemeral: true });
         for (let i = 1; i < chunks.length; i++) {
           await interaction.followUp({ content: chunks[i], ephemeral: true });
@@ -247,7 +239,7 @@ client.on("interactionCreate", async (interaction) => {
   } catch (error) {
     console.error("Error handling command:", error);
     const errorMsg = "An error occurred while processing your command. Please try again.";
-    
+
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({ content: errorMsg, ephemeral: true });
     } else {
@@ -256,7 +248,6 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// 優雅關閉
 process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
   await mongoose.connection.close();
@@ -268,12 +259,11 @@ client.login(token);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Render 健康檢查 - 防止服務休眠
 if (process.env.NODE_ENV === 'production') {
   setInterval(() => {
     fetch(`http://localhost:${PORT}/health`)
       .catch(err => console.log('Health check failed:', err.message));
-  }, 14 * 60 * 1000); // 每 14 分鐘檢查一次
+  }, 14 * 60 * 1000);
 }
 
 app.get("/", (req, res) => {
